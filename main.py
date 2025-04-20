@@ -24,6 +24,14 @@ def main(argv=sys.argv[1:]):
     #     cmd_checkout(args)
     # elif args.command == "commit":
     #     cmd_commit(args)
+    # elif args.command == "hash-object":
+    #     cmd_hash_object(args)
+    # elif args.command == "init":
+    #     cmd_init(args)
+    # elif args.command == "log":
+    #     cmd_log(args)
+    # elif args.command == "ls-tree":
+    #     cmd_ls_tree(args)
 
 
 class GitRepository(object):
@@ -359,8 +367,9 @@ def kvlm_serialize(kvlm):
     ret += b"\n" + kvlm[b""]
     return ret
 
+
 class GitCommit(GitObject):
-    fmt = b'commit'
+    fmt = b"commit"
 
     def deserialize(self, data):
         self.kvlm = kvlm_parse(data)
@@ -368,12 +377,9 @@ class GitCommit(GitObject):
     def serialize(self):
         return kvlm_serialize(self.kvlm)
 
-argsp = argsubparsers.add_parser(
-    "log", help="Display history of a given commit.")
-argsp.add_argument("commit",
-                   default="HEAD",
-                   nargs="?",
-                   help="Commit to start at.")
+
+argsp = argsubparsers.add_parser("log", help="Display history of a given commit.")
+argsp.add_argument("commit", default="HEAD", nargs="?", help="Commit to start at.")
 
 
 def cmd_log(args):
@@ -391,13 +397,13 @@ def log_graphviz(repo, sha, seen):
     seen.add(sha)
 
     commit = object_read(repo, sha)
-    assert (commit.fmt == b'commit')
+    assert commit.fmt == b"commit"
 
-    if not b'parent' in commit.kvlm.keys():
+    if not b"parent" in commit.kvlm.keys():
         # Base case: the initial commit.
         return
 
-    parents = commit.kvlm[b'parent']
+    parents = commit.kvlm[b"parent"]
 
     if type(parents) != list:
         parents = [parents]
@@ -407,6 +413,7 @@ def log_graphviz(repo, sha, seen):
         print("c_{0} -> c_{1};".format(sha, p))
         log_graphviz(repo, p, seen)
 
+
 class GitTreeLeaf(object):
     def __init__(self, mode, path, sha):
         self.mode = mode
@@ -415,17 +422,15 @@ class GitTreeLeaf(object):
 
 
 def tree_parse_one(raw, start=0):
-    x = raw.find(b' ', start)
-    assert(x-start == 5 or x-start == 6)
+    x = raw.find(b" ", start)
+    assert x - start == 5 or x - start == 6
 
     mode = raw[start:x]
-    y = raw.find(b'\x00', x)
-    path = raw[x+1:y]
+    y = raw.find(b"\x00", x)
+    path = raw[x + 1 : y]
 
-    sha = hex(
-        int.from_bytes(
-            raw[y+1:y+21], "big"))[2:]
-    return y+21, GitTreeLeaf(mode, path, sha)
+    sha = hex(int.from_bytes(raw[y + 1 : y + 21], "big"))[2:]
+    return y + 21, GitTreeLeaf(mode, path, sha)
 
 
 def tree_parse(raw):
@@ -440,13 +445,136 @@ def tree_parse(raw):
 
 
 def tree_serialize(obj):
-    ret = b''
+    ret = b""
     for i in obj.items:
         ret += i.mode
-        ret += b' '
+        ret += b" "
         ret += i.path
-        ret += b'\x00'
+        ret += b"\x00"
         sha = int(i.sha, 16)
         ret += sha.to_bytes(20, byteorder="big")
     return ret
 
+
+class GitTree(GitObject):
+    fmt = b"tree"
+
+    def deserialize(self, data):
+        self.items = tree_parse(data)
+
+    def serialize(self):
+        return tree_serialize(self)
+
+
+argsp = argsubparsers.add_parser("ls-tree", help="Pretty-print a tree object.")
+argsp.add_argument("object", help="The object to show.")
+
+
+def cmd_ls_tree(args):
+    repo = repo_find()
+    obj = object_read(repo, object_find(repo, args.object, fmt=b"tree"))
+
+    for item in obj.items:
+        print(
+            "{0} {1} {2}\t{3}".format(
+                "0" * (6 - len(item.mode)) + item.mode.decode("ascii"),
+                # Git's ls-tree displays the type
+                # of the object pointed to.  We can do that too :)
+                object_read(repo, item.sha).fmt.decode("ascii"),
+                item.sha,
+                item.path.decode("ascii"),
+            )
+        )
+
+
+argsp = argsubparsers.add_parser(
+    "checkout", help="Checkout a commit inside of a directory."
+)
+
+argsp.add_argument("commit", help="The commit or tree to checkout.")
+
+argsp.add_argument("path", help="The EMPTY directory to checkout on.")
+
+
+def cmd_checkout(args):
+    repo = repo_find()
+
+    obj = object_read(repo, object_find(repo, args.commit))
+
+    # If the object is a commit, we grab its tree
+    if obj.fmt == b"commit":
+        obj = object_read(repo, obj.kvlm[b"tree"].decode("ascii"))
+
+    # Verify that path is an empty directory
+    if os.path.exists(args.path):
+        if not os.path.isdir(args.path):
+            raise Exception("Not a directory {0}!".format(args.path))
+        if os.listdir(args.path):
+            raise Exception("Not empty {0}!".format(args.path))
+    else:
+        os.makedirs(args.path)
+
+    tree_checkout(repo, obj, os.path.realpath(args.path).encode())
+
+
+def tree_checkout(repo, tree, path):
+    for item in tree.items:
+        obj = object_read(repo, item.sha)
+        dest = os.path.join(path, item.path)
+
+        if obj.fmt == b"tree":
+            os.mkdir(dest)
+            tree_checkout(repo, obj, dest)
+        elif obj.fmt == b"blob":
+            with open(dest, "wb") as f:
+                f.write(obj.blobdata)
+
+
+def ref_resolve(repo, ref):
+    with open(repo_file(repo, ref), "r") as fp:
+        data = fp.read()[:-1]
+        # Drop final \n ^^^^^
+    if data.startswith("ref: "):
+        return ref_resolve(repo, data[5:])
+    else:
+        return data
+
+
+def ref_list(repo, path=None):
+    if not path:
+        path = repo_dir(repo, "refs")
+    ret = collections.OrderedDict()
+    for f in sorted(os.listdir(path)):
+        can = os.path.join(path, f)
+        if os.path.isdir(can):
+            ret[f] = ref_list(repo, can)
+        else:
+            ret[f] = ref_resolve(repo, can)
+
+    return ret
+
+
+argsp = argsubparsers.add_parser("show-ref", help="List references.")
+
+
+def cmd_show_ref(args):
+    repo = repo_find()
+    refs = ref_list(repo)
+    show_ref(repo, refs, prefix="refs")
+
+
+def show_ref(repo, refs, with_hash=True, prefix=""):
+    for k, v in refs.items():
+        if type(v) == str:
+            print(
+                "{0}{1}{2}".format(
+                    v + " " if with_hash else "", prefix + "/" if prefix else "", k
+                )
+            )
+        else:
+            show_ref(
+                repo,
+                v,
+                with_hash=with_hash,
+                prefix="{0}{1}{2}".format(prefix, "/" if prefix else "", k),
+            )
