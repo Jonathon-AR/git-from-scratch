@@ -539,10 +539,6 @@ argsp.add_argument("object",
                    nargs="?",
                    help="The object the new tag will point to")
 
-def ref_create(repo, ref_name, sha):
-    with open(repo_file(repo, "refs/" + ref_name), 'w') as fp:
-        fp.write(sha + "\n")
-
 def object_resolve(repo, name):
     """Resolve name to an object hash in repo"""
     candidates = list()
