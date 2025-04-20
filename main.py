@@ -25,14 +25,10 @@ def main(argv=sys.argv[1:]):
         "cat-file": cmd_cat_file,
         "checkout": cmd_checkout,
         "commit": cmd_commit,
-        "hash-object": cmd_hash_object,
         "init": cmd_init,
         "log": cmd_log,
         "ls-tree": cmd_ls_tree,
-        "rev-parse": cmd_rev_parse,
         "rm": cmd_rm,
-        "show-ref": cmd_show_ref,
-        "tag": cmd_tag,
     }
 
     commands.get(args.command, lambda args: print(f"Unknown command: {args.command}"))(args)
@@ -297,16 +293,6 @@ argsp.add_argument(
 argsp.add_argument("path", help="Read object from <file>")
 
 
-def cmd_hash_object(args):
-    if args.write:
-        repo = GitRepository(".")
-    else:
-        repo = None
-
-    with open(args.path, "rb") as fd:
-        sha = object_hash(fd, args.type.encode(), repo)
-        print(sha)
-
 
 def object_hash(fd, fmt, repo=None):
     data = fd.read()
@@ -557,31 +543,6 @@ def ref_list(repo, path=None):
 
 argsp = argsubparsers.add_parser("show-ref", help="List references.")
 
-
-def cmd_show_ref(args):
-    repo = repo_find()
-    refs = ref_list(repo)
-    show_ref(repo, refs, prefix="refs")
-
-
-def show_ref(repo, refs, with_hash=True, prefix=""):
-    for k, v in refs.items():
-        if type(v) == str:
-            print(
-                "{0}{1}{2}".format(
-                    v + " " if with_hash else "", prefix + "/" if prefix else "", k
-                )
-            )
-        else:
-            show_ref(
-                repo,
-                v,
-                with_hash=with_hash,
-                prefix="{0}{1}{2}".format(prefix, "/" if prefix else "", k),
-            )
-
-
-
 class GitTag(GitCommit):
     fmt = b'tag'
 
@@ -603,18 +564,6 @@ argsp.add_argument("object",
                    default="HEAD",
                    nargs="?",
                    help="The object the new tag will point to")
-
-
-def cmd_tag(args):
-    repo = repo_find()
-
-    if args.name:
-        tag_create(args.name,
-                   args.object,
-                   type="object" if args.create_tag_object else "ref")
-    else:
-        refs = ref_list(repo)
-        show_ref(repo, refs["tags"], with_hash=False)
 
 def tag_create(repo, name, ref, create_tag_object=False):
     # get the GitObject from the object reference
@@ -715,17 +664,6 @@ argsp.add_argument("--wyag-type",
 
 argsp.add_argument("name",
                    help="The name to parse")
-
-
-def cmd_rev_parse(args):
-    if args.type:
-        fmt = args.type.encode()
-    else:
-        fmt = None
-
-    repo = repo_find()
-
-    print(object_find(repo, args.name, fmt, follow=True))
 
 class GitIndexEntry (object):
     def __init__(self, ctime=None, mtime=None, dev=None, ino=None,
