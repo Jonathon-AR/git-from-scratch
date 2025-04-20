@@ -16,22 +16,25 @@ argsubparsers.required = True
 def main(argv=sys.argv[1:]):
     args = argparser.parse_args(argv)
 
-    # if args.command == "add":
-    #     cmd_add(args)
-    # elif args.command == "cat-file":
-    #     cmd_cat_file(args)
-    # elif args.command == "checkout":
-    #     cmd_checkout(args)
-    # elif args.command == "commit":
-    #     cmd_commit(args)
-    # elif args.command == "hash-object":
-    #     cmd_hash_object(args)
-    # elif args.command == "init":
-    #     cmd_init(args)
-    # elif args.command == "log":
-    #     cmd_log(args)
-    # elif args.command == "ls-tree":
-    #     cmd_ls_tree(args)
+    commands = {
+        "add": cmd_add,
+        "cat-file": cmd_cat_file,
+        "checkout": cmd_checkout,
+        "commit": cmd_commit,
+        "hash-object": cmd_hash_object,
+        "init": cmd_init,
+        "log": cmd_log,
+        "ls-tree": cmd_ls_tree,
+        "merge": cmd_merge,
+        "rebase": cmd_rebase,
+        "rev-parse": cmd_rev_parse,
+        "rm": cmd_rm,
+        "show-ref": cmd_show_ref,
+        "tag": cmd_tag,
+    }
+
+    commands.get(args.command, lambda args: print(f"Unknown command: {args.command}"))(args)
+
 
 
 class GitRepository(object):
